@@ -54,25 +54,7 @@ Check the inbox of `you@your.co` and see you got the email.
 
 
 ## Deploy Helm Chart
-The Helm Chart in [helm/postfix](helm/postfix) directory can be used to deploy the postfix-relay into your Kubernetes cluster.
-
-The Chart will deploy 2 pods (for high availability), load balanced with a service, exposing port 25.
-```bash
-# Need to set SMTP connection details
-export SMTP="[smtp.mailgun.org]:587"
-export USERNAME=<your smtp username>
-export PASSWORD=<your smtp password>
-
-helm upgrade --install postfix-relay \
-        --set smtp.relayHost=${SMTP} \
-        --set smtp.relayMyhostname=my.local \
-        --set smtp.relayUsername=${USERNAME} \
-        --set smtp.relayPassword=${PASSWORD} \ 
-        helm/postfix
-
-
-```
-
+If you want to deploy this Docker image with Helm, you can use [postfix-helm](https://github.com/dreitier/postfix-helm).
 
 ## Thanks
 This work is based on examples from https://github.com/applariat/kubernetes-postfix-relay-host 
