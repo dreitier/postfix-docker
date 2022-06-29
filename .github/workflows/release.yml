@@ -1,0 +1,21 @@
+name: Release new version
+on:
+  push:
+    tags:
+     - '*'
+
+jobs:
+  release:
+    name: Release new version
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Publish to Registry
+      id: publish_to_registry
+      uses: elgohr/Publish-Docker-Github-Action@master
+      with:
+        name: dreitier/postfix
+        username: ${{ secrets.DOCKER_HUB_USERNAME }}
+        password: ${{ secrets.DOCKER_HUB_TOKEN }}
+        tag_names: true
