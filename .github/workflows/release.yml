@@ -13,7 +13,7 @@ jobs:
 
     - name: Publish to Registry
       id: publish_to_registry
-      uses: elgohr/Publish-Docker-Github-Action@master
+      uses: elgohr/Publish-Docker-Github-Action@v5
       with:
         name: dreitier/postfix
         username: ${{ secrets.DOCKER_HUB_USERNAME }}
