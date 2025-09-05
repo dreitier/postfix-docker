@@ -1,6 +1,6 @@
-FROM alpine:3.8
+FROM alpine:3.22.0
 
-LABEL maintainer Thomas Höll <thomas dot hoell at neos-it.de>
+LABEL maintainer="Thomas Höll <tho@dreitier.com"
 
 # Install postfix and supervisor
 RUN apk add --no-cache \
