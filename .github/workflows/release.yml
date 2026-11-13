@@ -1,0 +1,204 @@
+name: Release
+
+# On every push to main (i.e. every merged PR):
+# 1. run the full CI pipeline
+# 2. semantic-release derives the next version from the Conventional Commits since the last tag,
+#    updates CHANGELOG.md, pushes the release commit + tag and creates the GitHub release.
+#    Nothing happens if there are only non-releasing commits (docs, ci, chore, ...).
+# 3. the multi-arch image is pushed to Docker Hub and GHCR, signed with cosign and attested.
+# 4. dreitier/helm-charts is notified (repository_dispatch postfix-released) to update the postfix chart.
+on:
+  push:
+    branches:
+      - main
+  # re-run a release attempt manually, e.g. after a failed publish
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# never run two releases at the same time, and never cancel one halfway
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    name: CI
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+      security-events: write
+
+  semantic-release:
+    name: Version & GitHub release
+    needs: ci
+    runs-on: ubuntu-latest
+    # all writes use the GitHub App token, which may bypass the branch protection of main
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - name: Create GitHub App token
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          # semantic-release authenticates git pushes with GITHUB_TOKEN itself
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install semantic-release
+        run: npm ci --ignore-scripts
+
+      - name: Get bot identity for the release commit
+        id: bot
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
+        run: |
+          user_id=$(gh api "/users/${APP_SLUG}[bot]" --jq .id)
+          {
+            echo "name=${APP_SLUG}[bot]"
+            echo "email=${user_id}+${APP_SLUG}[bot]@users.noreply.github.com"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Run semantic-release
+        id: release
+        run: npx semantic-release
+        env:
+          GITHUB_TOKEN: ${{ steps.app.outputs.token }}
+          GIT_AUTHOR_NAME: ${{ steps.bot.outputs.name }}
+          GIT_AUTHOR_EMAIL: ${{ steps.bot.outputs.email }}
+          GIT_COMMITTER_NAME: ${{ steps.bot.outputs.name }}
+          GIT_COMMITTER_EMAIL: ${{ steps.bot.outputs.email }}
+
+  image:
+    name: Docker image
+    needs: semantic-release
+    if: needs.semantic-release.outputs.version != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ needs.semantic-release.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.semantic-release.outputs.version }}
+          persist-credentials: false
+
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+
+      - name: Log in to GHCR
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 1.2.3 -> 1.2.3, 1.2, 1, latest
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: |
+            dreitier/postfix
+            ghcr.io/dreitier/postfix
+          flavor: |
+            latest=false
+          tags: |
+            type=semver,pattern={{version}},value=${{ env.VERSION }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ env.VERSION }}
+            type=semver,pattern={{major}},value=${{ env.VERSION }}
+            type=raw,value=latest
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha
+
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.3
+
+      # keyless Sigstore signatures (GitHub OIDC identity of this workflow), verifiable with `cosign verify`
+      - name: Sign images
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          cosign sign --yes "index.docker.io/dreitier/postfix@${DIGEST}"
+          cosign sign --yes "ghcr.io/dreitier/postfix@${DIGEST}"
+
+      - name: Attest image on Docker Hub
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: index.docker.io/dreitier/postfix
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Attest image on GHCR
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ghcr.io/dreitier/postfix
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+  # helm-charts opens a PR that updates the postfix chart to this version
+  # (.github/workflows/update-postfix.yaml there, same as update-backmon.yaml)
+  helm-chart:
+    name: Trigger Helm chart update
+    needs: [semantic-release, image]
+    if: needs.semantic-release.outputs.version != ''
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Create GitHub App token for dreitier/helm-charts
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: dreitier
+          repositories: helm-charts
+          # repository_dispatch requires write access to the repository contents
+          permission-contents: write
+
+      - name: Send repository_dispatch to dreitier/helm-charts
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          VERSION: ${{ needs.semantic-release.outputs.version }}
+        run: |
+          gh api --method POST repos/dreitier/helm-charts/dispatches \
+            -f event_type=postfix-released \
+            -f "client_payload[version]=${VERSION}"
+          echo "Requested Helm chart update to postfix image ${VERSION}" >> "$GITHUB_STEP_SUMMARY"
