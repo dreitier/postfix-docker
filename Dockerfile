@@ -6,7 +6,8 @@ FROM alpine:3.24
 
 LABEL org.opencontainers.image.source="https://github.com/dreitier/postfix-docker" \
       org.opencontainers.image.description="Postfix SMTP relay that forwards mail to an upstream SMTP server with TLS and SASL authentication" \
-      org.opencontainers.image.vendor="dreitier GmbH"
+      org.opencontainers.image.vendor="dreitier GmbH" \
+      org.opencontainers.image.licenses="MIT"
 
 # DL3018: distribution packages are not pinned; the image is rebuilt on every release and weekly in CI
 # cyrus-sasl-login: AUTH LOGIN for upstream servers without AUTH PLAIN (e.g. Microsoft 365); PLAIN is in libsasl

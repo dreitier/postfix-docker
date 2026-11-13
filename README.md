@@ -92,6 +92,10 @@ the version (`fix:`/`build(deps):` → patch, `feat:` → minor, `feat!:`/`BREAK
 `ci:`, `chore:` → no release), creates the GitHub release and publishes the signed images.
 Don't edit CHANGELOG.md or create tags by hand.
 
+## License
+
+MIT, see [LICENSE.md](LICENSE.md).
+
 ## Thanks
 
 Based on the examples from [applariat/kubernetes-postfix-relay-host](https://github.com/applariat/kubernetes-postfix-relay-host).
