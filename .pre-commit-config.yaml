@@ -1,0 +1,29 @@
+# Local checks before each commit, mirroring the CI lint job.
+# Setup (once per clone): `pre-commit install` (Fedora: `sudo dnf install pre-commit`)
+# Run manually on all files: `pre-commit run --all-files`
+repos:
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12 # also used by the CI lint job
+    hooks:
+      - id: actionlint
+
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.14.0
+    hooks:
+      # runs hadolint in Docker, like the CI lint job
+      - id: hadolint-docker
+        args: [--failure-threshold, warning]
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-yaml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.11.0.1
+    hooks:
+      - id: shellcheck
