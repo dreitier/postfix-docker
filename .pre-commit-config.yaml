@@ -1,16 +1,17 @@
-# Local checks before each commit, mirroring the CI lint job.
+# Local checks before each commit. The CI lint job runs the same hooks (pre-commit version:
+# .github/requirements-ci.txt); hadolint-docker is skipped there in favour of the pinned hadolint-action.
 # Setup (once per clone): `pre-commit install` (Fedora: `sudo dnf install pre-commit`)
 # Run manually on all files: `pre-commit run --all-files`
 repos:
   - repo: https://github.com/rhysd/actionlint
-    rev: v1.7.12 # also used by the CI lint job
+    rev: v1.7.12
     hooks:
       - id: actionlint
 
   - repo: https://github.com/hadolint/hadolint
     rev: v2.15.1
     hooks:
-      # runs hadolint in Docker, like the CI lint job
+      # runs hadolint in Docker (latest image); CI uses hadolint-action instead
       - id: hadolint-docker
         args: [--failure-threshold, warning]
 

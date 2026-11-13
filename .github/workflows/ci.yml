@@ -25,23 +25,22 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Read linter versions from .pre-commit-config.yaml
-        id: versions
-        run: |
-          rev_of() {
-            awk -v repo="repo: $1" 'index($0, repo) { found = 1; next } found && $1 == "rev:" { print $2; exit }' .pre-commit-config.yaml
-          }
-          actionlint=$(rev_of https://github.com/rhysd/actionlint)
-          if [ -z "$actionlint" ]; then
-            echo "::error file=.pre-commit-config.yaml::could not read the actionlint version"
-            exit 1
-          fi
-          echo "actionlint=${actionlint#v}" >> "$GITHUB_OUTPUT"
+      # pre-commit version: .github/requirements-ci.txt (Dependabot)
+      - name: Install pre-commit
+        run: pipx install "$(grep -E '^pre-commit==' .github/requirements-ci.txt)"
 
-      - name: actionlint
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      # The hooks of .pre-commit-config.yaml (actionlint, shellcheck, file checks), exactly as locally.
+      # Also fails if a hook revision doesn't exist (e.g. a broken Dependabot update). hadolint runs
+      # separately: the hadolint-docker hook uses the untagged image, hadolint-action a pinned version.
+      - name: pre-commit
         env:
-          ACTIONLINT_VERSION: ${{ steps.versions.outputs.actionlint }}
-        run: docker run --rm -v "$PWD:/repo" --workdir /repo "rhysd/actionlint:${ACTIONLINT_VERSION}" -color
+          SKIP: hadolint-docker
+        run: pre-commit run --all-files --show-diff-on-failure --color=always
 
       - name: Lint Dockerfile
         if: ${{ !cancelled() }}
@@ -49,14 +48,6 @@ jobs:
         with:
           dockerfile: Dockerfile
           failure-threshold: warning
-
-      # shellcheck is preinstalled on the GitHub runners; entrypoint.sh runs in BusyBox ash (POSIX sh)
-      - name: shellcheck
-        if: ${{ !cancelled() }}
-        run: |
-          shellcheck --version | head -n 2
-          shellcheck --shell=sh entrypoint.sh
-          shellcheck .github/ci/e2e.sh
 
   dependency-review:
     name: Dependency review
