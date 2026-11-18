@@ -115,20 +115,9 @@ jobs:
       - name: End-to-end test
         run: .github/ci/e2e.sh postfix:ci
 
+      # CRITICAL/HIGH with a fix, SARIF to the Security tab (category trivy). Reporting only (exit code 0):
+      # findings are in Alpine packages and fixed by the next rebuild
       - name: Scan image with Trivy
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        uses: dreitier/shared-ci-components/trivy-scan@eec1480693feee5edb0272c24f63a398bee80108 # v1.0.0
         with:
-          image-ref: postfix:ci
-          format: sarif
-          output: trivy.sarif
-          severity: CRITICAL,HIGH
-          ignore-unfixed: true
-          # reporting only (Security tab); findings are in Alpine packages and fixed by the next rebuild
-          exit-code: '0'
-
-      - name: Upload Trivy results
-        if: always() && hashFiles('trivy.sarif') != ''
-        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
-        with:
-          sarif_file: trivy.sarif
-          category: trivy
+          image: postfix:ci
