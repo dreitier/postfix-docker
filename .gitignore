@@ -1,5 +1,4 @@
 .idea/
-node_modules/
 tmp/
 # local test settings may contain credentials
 .env
